@@ -82,8 +82,16 @@ public:
 		len++;
 	}
 
+	void printLocks(){
+		std::cout << "locks:";
+		for(size_t i = 0; i < len; ++i)
+			std::cout << locks[i] << " ";
+		std::cout << "\n";
+	}
+
 	void RemoveNodeAt(size_t indx){
 		//std::cout << indx << " <- \n";
+		size_t indx_in = indx;
 		if(indx <= 0)
 			return;
 
@@ -107,7 +115,9 @@ public:
 				temp_front = temp -> getNext();
 
 			indx--;
-
+			//sleep(1);
+			//std::cout << "delete lock -> " << lock_number << "\n";
+			//printLocks();
 			pthread_mutex_unlock(locks[lock_number]);
 			++lock_number;
 			pthread_mutex_lock(locks[lock_number]);
@@ -131,10 +141,13 @@ public:
 		pthread_mutex_unlock(locks[lock_number + 1]);
 		pthread_mutex_unlock(locks[lock_number]);
 
-		free(locks[indx]);
-		locks.erase(locks.begin() + indx);
+		free(locks[lock_number]);
+		locks.erase(locks.begin() + lock_number);
 		
-		len--;	
+		len--;
+
+		//std::cout << "deleted - " << lock_number << "\n";	
+		//printLocks();
 	}
 
 	void PushAt(size_t indx, const T& item){
@@ -146,14 +159,15 @@ public:
 		while(temp != nullptr && indx > 0 && temp -> getNext() != nullptr){
 			temp = temp -> getNext();
 			indx--;
-			
+			//sleep(0.1);
+			//std::cout << "push lock -> " << lock_number << "\n";
 			pthread_mutex_unlock(locks[lock_number]);
 			++lock_number;
 			pthread_mutex_lock(locks[lock_number]);
 		}	
 		
 		temp -> push_back(std::move(const_cast<T&>(item)));		
-		
+		//std::cout << "pushed - " << indx << " " << item << "\n";
 		pthread_mutex_unlock(locks[lock_number]);
 	}
 
@@ -197,13 +211,24 @@ void* thread_one_contest(void*){
 		deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);
 	}
 
-	
 	return NULL;
 }
 
+int deleted = 0;
+
 void* thread_three_contest(void*){
-	//deq.RemoveNodeAt(4);
-	//deq.RemoveNodeAt(6);
+	deq.RemoveNodeAt(4);
+	//if(deleted < 4){
+	sleep(1);
+	deq.RemoveNodeAt(6);
+	
+	deq.RemoveNodeAt(4);
+	//if(deleted < 4){
+	sleep(1);
+	deq.RemoveNodeAt(6);
+	//	deleted += 1;
+	//}
+	
 	//deq.PushNode(10);
 	return NULL;
 }
@@ -212,12 +237,13 @@ int main(){
 	for(size_t i = 1; i < 10; ++i){
 		deq.PushNode(i);
 	}
+	std::cout << "init completed\n\n";
 	
 	//for(size_t i = 1; i < 10; ++i){
 	//	deq.RemoveNodeAt(i);
 	//}
 
-	deq.RemoveNodeAt(6);
+	//deq.RemoveNodeAt(6);
 	
 	pthread_t threads[4];
 
