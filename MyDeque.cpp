@@ -44,6 +44,11 @@ class Deque{
 public:
 	Deque(const T& init){
 		start = new DequeNode<T>(init);
+		
+		pthread_mutex_t* new_lock = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+	
+		locks.push_back(new_lock);
+		
 		len++;
 		//start = new DequeNode<T>();
 		//start -> setNext(new DequeNode<T>());
@@ -55,40 +60,101 @@ public:
 	}
 
 	void PushNode(const T& init){
-
 		DequeNode<T>* temp = start;
+		size_t lock_number = 0;
+
+		pthread_mutex_lock(locks[lock_number]);
 		
 		while(temp != nullptr && temp -> getNext() != nullptr){
 			temp = temp -> getNext();
+			
+			pthread_mutex_unlock(locks[lock_number]);
+			++lock_number;
+			pthread_mutex_lock(locks[lock_number]);
 		}
-
-		pthread_mutex_lock(&main_lock);
+		
+		pthread_mutex_unlock(locks[lock_number]);
 
 		temp -> setNext(new DequeNode<T>(init));
 		pthread_mutex_t* new_lock = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
-		//pthread_mutex_init(new_lock, NULL);
+				
 		locks.push_back(new_lock);
 		len++;
-		pthread_mutex_unlock(&main_lock);
+	}
 
+	void RemoveNodeAt(size_t indx){
+		//std::cout << indx << " <- \n";
+		if(indx <= 0)
+			return;
+
+		DequeNode<T>* temp = start;
+		DequeNode<T>* temp_back = nullptr;
+		DequeNode<T>* temp_front = nullptr;
+
+		if(start -> getNext() != nullptr)
+			temp_front = start -> getNext();
+
+		size_t lock_number = 0;
+		pthread_mutex_lock(locks[lock_number]);
+		
+		while(temp != nullptr && indx > 0 && temp -> getNext() != nullptr){
+			//std::cout << "	***\n";
+			temp_back = temp;
+
+			temp = temp -> getNext();
+
+			if(temp -> getNext() != nullptr)
+				temp_front = temp -> getNext();
+
+			indx--;
+
+			pthread_mutex_unlock(locks[lock_number]);
+			++lock_number;
+			pthread_mutex_lock(locks[lock_number]);
+		}
+		
+		if(lock_number - 1 > 0){
+			//std::cout << "*locked prev*\n";
+			pthread_mutex_lock(locks[lock_number - 1]);
+		}
+
+		if(lock_number + 1 < len){
+			//std::cout << "*locked next*\n";
+			pthread_mutex_lock(locks[lock_number + 1]);
+		}
+	
+		temp_back -> setNext(temp_front);
+	
+		delete temp;
+
+		pthread_mutex_unlock(locks[lock_number - 1]);
+		pthread_mutex_unlock(locks[lock_number + 1]);
+		pthread_mutex_unlock(locks[lock_number]);
+
+		free(locks[indx]);
+		locks.erase(locks.begin() + indx);
+		
+		len--;	
 	}
 
 	void PushAt(size_t indx, const T& item){
-		//std::cout << indx << " " << len << "\n";
-
 		DequeNode<T>* temp = start;
-
-		while(temp != nullptr && indx > 0){
+		
+		size_t lock_number = 0;
+		pthread_mutex_lock(locks[lock_number]);
+		
+		while(temp != nullptr && indx > 0 && temp -> getNext() != nullptr){
 			temp = temp -> getNext();
 			indx--;
+			
+			pthread_mutex_unlock(locks[lock_number]);
+			++lock_number;
+			pthread_mutex_lock(locks[lock_number]);
 		}	
-
-		pthread_mutex_lock(locks[indx]);
-
+		
 		temp -> push_back(std::move(const_cast<T&>(item)));		
 		
-		pthread_mutex_unlock(locks[indx]);
-
+		pthread_mutex_unlock(locks[lock_number]);
 	}
 
 	void TryPushAt(size_t indx);
@@ -113,7 +179,6 @@ private:
 	size_t len = 0;
 	DequeNode<T>* start;
 	std::vector<pthread_mutex_t*> locks;
-	pthread_mutex_t main_lock;
 };
 
 
@@ -121,19 +186,25 @@ Deque<int> deq(0);
 
 void* thread_two_contest(void*){
 	for(size_t i = 0; i < deq.getLen(); ++i){
-		//std::cout << i << " ";
 		deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);
 	}
-	//deq.printMe();
+	
 	return NULL;
 }
 
 void* thread_one_contest(void*){
 	for(size_t i = 0; i < deq.getLen(); ++i){
-		//std::cout << i << " ";
 		deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);deq.PushAt(i, i);
 	}
-	//deq.printMe();
+
+	
+	return NULL;
+}
+
+void* thread_three_contest(void*){
+	//deq.RemoveNodeAt(4);
+	//deq.RemoveNodeAt(6);
+	//deq.PushNode(10);
 	return NULL;
 }
 
@@ -141,14 +212,20 @@ int main(){
 	for(size_t i = 1; i < 10; ++i){
 		deq.PushNode(i);
 	}
-	pthread_t threads[3];
+	
+	//for(size_t i = 1; i < 10; ++i){
+	//	deq.RemoveNodeAt(i);
+	//}
 
-	//for(int i = 1; i < 10; ++i)
-	//	deq.PushNode(i);
+	deq.RemoveNodeAt(6);
+	
+	pthread_t threads[4];
+
 	
 	pthread_create(&threads[0], NULL, thread_one_contest, NULL);
 	pthread_create(&threads[1], NULL, thread_two_contest, NULL);
 	pthread_create(&threads[2], NULL, thread_two_contest, NULL);
+	pthread_create(&threads[3], NULL, thread_three_contest, NULL);
 
 
 	//for(size_t i = 0; i < 10; ++i){
@@ -160,6 +237,7 @@ int main(){
 	pthread_join(threads[0], NULL);
 	pthread_join(threads[1], NULL);
 	pthread_join(threads[2], NULL);
+	pthread_join(threads[3], NULL);
 	
 	sleep(1);
 
